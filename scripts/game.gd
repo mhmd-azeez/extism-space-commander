@@ -8,6 +8,8 @@ extends Node2D
 @onready var enemy_container = $EnemyContainer
 @onready var hud = $UILayer/HUD
 
+var id = 1
+
 var mod_manager : Node
 
 var score := 0:
@@ -42,9 +44,12 @@ func _on_player_laser_shot(laser_scene, location):
 
 func _on_enemy_spawn_timer_timeout():
 	var enemy = enemy_scenes.pick_random().instantiate()
+	enemy.id = id
 	enemy.global_position = Vector2(randf_range(50, 500), -50)
 	enemy.killed.connect(_on_enemy_killed)
 	enemy_container.add_child(enemy)
+	
+	id += 1
 
 func _on_enemy_killed(bounty):
 	score += bounty

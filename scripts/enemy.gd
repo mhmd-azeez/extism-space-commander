@@ -5,6 +5,7 @@ signal killed(bounty)
 @export var speed = 150
 @export var hp = 1
 @export var bounty = 100
+@export var id = 1
 
 func _physics_process(delta):
 	global_position.y += speed * delta
