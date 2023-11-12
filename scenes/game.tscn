@@ -1,0 +1,30 @@
+[gd_scene load_steps=6 format=3 uid="uid://6sfhbkawtpxd"]
+
+[ext_resource type="Script" path="res://scripts/game.gd" id="1_kb1f1"]
+[ext_resource type="PackedScene" uid="uid://bllh5vg4pbn4q" path="res://scenes/player.tscn" id="2_s8vwr"]
+[ext_resource type="PackedScene" uid="uid://byolg7th7x50h" path="res://scenes/enemy.tscn" id="2_yg66r"]
+[ext_resource type="PackedScene" uid="uid://b8uq6rkn003fl" path="res://scenes/diver_enemy.tscn" id="3_1e271"]
+[ext_resource type="PackedScene" uid="uid://d4ec5gwna4nry" path="res://scenes/hud.tscn" id="4_vnpof"]
+
+[node name="Game" type="Node2D"]
+script = ExtResource("1_kb1f1")
+enemy_scenes = Array[PackedScene]([ExtResource("2_yg66r"), ExtResource("3_1e271")])
+
+[node name="UILayer" type="CanvasLayer" parent="."]
+
+[node name="HUD" parent="UILayer" instance=ExtResource("4_vnpof")]
+
+[node name="EnemySpawnTimer" type="Timer" parent="."]
+autostart = true
+
+[node name="Player" parent="." instance=ExtResource("2_s8vwr")]
+position = Vector2(204, 777)
+
+[node name="PlayerSpawnPos" type="Marker2D" parent="."]
+position = Vector2(258, 903)
+
+[node name="LaserContainer" type="Node2D" parent="."]
+
+[node name="EnemyContainer" type="Node2D" parent="."]
+
+[connection signal="timeout" from="EnemySpawnTimer" to="." method="_on_enemy_spawn_timer_timeout"]

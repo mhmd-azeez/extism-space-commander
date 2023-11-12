@@ -1,0 +1,19 @@
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "extism-space-commander", "extism-space-commander.csproj", "{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+	Debug|Any CPU = Debug|Any CPU
+	ExportDebug|Any CPU = ExportDebug|Any CPU
+	ExportRelease|Any CPU = ExportRelease|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{BF83E4C5-0AD0-4E23-8B0A-D6D5192ECDDD}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+	EndGlobalSection
+EndGlobal

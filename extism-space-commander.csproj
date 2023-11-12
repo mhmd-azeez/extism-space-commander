@@ -1,0 +1,16 @@
+<Project Sdk="Godot.NET.Sdk/4.1.2">
+	<PropertyGroup>
+		<TargetFramework>net6.0</TargetFramework>
+		<EnableDynamicLoading>true</EnableDynamicLoading>
+		<RootNamespace>extismspaceshooter</RootNamespace>
+	</PropertyGroup>
+	<ItemGroup>
+		<None Include="assets\mods\iamready.wasm">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="Extism.runtime.all" Version="1.0.0-rc0" />
+		<PackageReference Include="Extism.Sdk" Version="1.0.0-rc3" />
+	</ItemGroup>
+</Project>
