@@ -25,3 +25,8 @@ grow_horizontal = 2
 text = "SCORE: 0"
 label_settings = SubResource("LabelSettings_vsnok")
 horizontal_alignment = 1
+
+[node name="Fps" type="Label" parent="."]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0

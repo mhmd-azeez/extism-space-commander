@@ -28,7 +28,6 @@ public partial class mod_manager : Node
 public partial class PowerUpMod : Area2D
 {
     private readonly Plugin _extismPlugin;
-    private readonly List<Sprite2D> _sprites = new();
 
     public PowerUpMod(string wasmPath)
     {
@@ -53,12 +52,10 @@ public partial class PowerUpMod : Area2D
                     var y = inputs[2].v.f32;
 
                     var name = cp.ReadBytes(offs).ToArray();
-                    GD.Print($"name: {Encoding.UTF8.GetString(name)}");
 
                     CallPluginFunction(() =>
                     {
                         var resourceBuffer = _extismPlugin.Call("load_resource", name).ToArray();
-                        GD.Print("resource loaded");
 
                         var sprite = LoadSprite(resourceBuffer);
                         sprite.Name = Encoding.UTF8.GetString(name);
@@ -69,20 +66,12 @@ public partial class PowerUpMod : Area2D
 
             HostFunction.FromMethod("create_reminder", IntPtr.Zero, (CurrentPlugin cp, float seconds, long offset) =>
             {
-                GD.Print("creating reminderrrr...");
                 var input = cp.ReadBytes(offset).ToArray();
 
                 var timer = GetTree().CreateTimer(seconds);
                 timer.Connect("timeout", Callable.From(() =>
                 {
-                    timer.Free();
-                    GD.Print($"REMINDER: It's time for {Encoding.UTF8.GetString(input)}");
-
-                    CallPluginFunction(() =>
-                    {
-                         GD.Print($"Heyyyy!");
-                        _extismPlugin.Call("reminder", input);
-                    });
+                    _extismPlugin.Call("reminder", input);
                 }));
             }),
 
@@ -114,14 +103,12 @@ public partial class PowerUpMod : Area2D
                 }
 
                 var json = JsonSerializer.Serialize(enemies);
-                GD.Print(json);
                 return cp.WriteString(json);
             }),
 
             HostFunction.FromMethod("enemy_take_damage", IntPtr.Zero, (CurrentPlugin cp, int id, int amount) =>
             {
                 var enemies = new List<Enemy>();
-                GD.Print($"looking for enemy with id: {id}");
 
                 foreach (var enemy in GetParent().GetParent().FindChild("EnemyContainer").GetChildren().OfType<Area2D>())
                 {
@@ -139,7 +126,6 @@ public partial class PowerUpMod : Area2D
             HostFunction.FromMethod("get_player_info", IntPtr.Zero, (CurrentPlugin cp) =>
             {
                 var parent = GetParent().GetParent();
-                GD.Print(parent.Name);
                 var player = (CharacterBody2D)GetParent().GetParent().FindChild("Player");
                 var info = new PlayerInfo(player.GlobalPosition.X, player.GlobalPosition.Y);
 
@@ -163,7 +149,6 @@ public partial class PowerUpMod : Area2D
         var timer = GetTree().CreateTimer(0.0001);
         timer.Connect("timeout", Callable.From(() =>
         {
-            timer.Free();
             action();
         }));
     }
@@ -185,7 +170,6 @@ public partial class PowerUpMod : Area2D
         _extismPlugin.Call("on_ready", Array.Empty<byte>());
 
         var spriteName = _extismPlugin.Call("get_sprite", Array.Empty<byte>()).ToArray();
-        GD.Print($"Power up sprite name: {Encoding.UTF8.GetString(spriteName)}");
         var spriteBuffer = _extismPlugin.Call("load_resource", spriteName).ToArray();
 
         var image = new Image();
@@ -223,8 +207,6 @@ public partial class PowerUpMod : Area2D
         AddChild(sprite);
         AddChild(collision);
         AddChild(notifier);
-
-        GD.Print("READYYY!");
 
         var viewPort = GetViewportRect();
 
