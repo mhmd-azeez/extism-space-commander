@@ -1,0 +1,6 @@
+go 1.21.1
+
+use ./kaboom
+use ./promote
+use ./shield
+use ./modding_api
