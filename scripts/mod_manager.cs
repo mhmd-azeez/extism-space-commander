@@ -9,65 +9,126 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
-public partial class mod_manager : Node
+public partial class mod_manager : Node2D
 {
+    private readonly Mod[] _mods;
+    public List<PowerUp> PowerUps { get; } = new List<PowerUp>();
+
+    public mod_manager()
+    {
+        _mods = Directory.EnumerateFiles("assets/mods/", "*.wasm").Select(f => new Mod(File.ReadAllBytes(f), this)).ToArray();
+    }
+
     public override void _Ready()
     {
-        var timer = new Godot.Timer
+        var timer = new Timer
         {
             Autostart = true,
             OneShot = false,
-            WaitTime = 10
+            WaitTime = 1
         };
 
         AddChild(timer);
-        var mods = Directory.EnumerateFiles("assets/mods/", "*.wasm").Select(f => File.ReadAllBytes(f)).ToArray();
         timer.Connect("timeout", Callable.From(() =>
         {
-            var idx = Random.Shared.Next(mods.Length);
-            var mod = new PowerUpMod(mods[idx]);
-            AddChild(mod);
+            var idx = Random.Shared.Next(_mods.Length);
+            var mod = _mods[idx];
+
+            var powerup = new PowerUp(mod);
+            powerup.TreeExited += Powerup_TreeExited;
+
+            AddChild(powerup);
+            PowerUps.Add(powerup);
+
+            void Powerup_TreeExited()
+            {
+                powerup.TreeExited -= Powerup_TreeExited;
+                PowerUps.Remove(powerup);
+            }
         }));
     }
 }
 
-public partial class PowerUpMod : Area2D
+public partial class PowerUp : Area2D
 {
-    private Plugin _extismPlugin;
-    private readonly byte[] _wasm;
+    private Sprite2D _sprite;
+    private Mod _mod;
 
-    public PowerUpMod(byte[] wasm)
+    private static int _id = 0;
+
+    public PowerUp(Mod mod)
     {
-        _wasm = wasm;
+        _mod = mod;
+        Id = _id++;
+        Info = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new PowerUpInfo(Id)));
     }
 
-    private void CallPluginFunction(Action action)
-    {
-        // HACK: calling a plugin function within a host function causes a deadlock!
+    public int Id { get; set; }
+    public byte[] Info { get; }
 
-        var timer = GetTree().CreateTimer(0.0001);
-        timer.Connect("timeout", Callable.From(() =>
+    public override void _Ready()
+    {
+        _sprite = new Sprite2D();
+        _sprite.Texture = _mod.GetSpriteTexture(this);
+        _sprite.Position = new Vector2(10, 10);
+
+        var collision = new CollisionShape2D();
+        collision.Shape = new CircleShape2D
         {
-            action();
+            Radius = 10,
+        };
+
+        var notifier = new VisibleOnScreenEnabler2D();
+        notifier.Connect("screen_exited", Callable.From(() =>
+        {
+            QueueFree();
         }));
+
+        Connect("body_entered", Callable.From((Node body) =>
+        {
+            if (body.Name != "Player")
+            {
+                return;
+            }
+
+            RemoveChild(_sprite);
+            RemoveChild(collision);
+            RemoveChild(notifier);
+            _mod.Activate(this);
+        }));
+
+        AddChild(_sprite);
+        AddChild(collision);
+        AddChild(notifier);
+
+        var viewPort = GetViewportRect();
+
+        GlobalPosition = viewPort.Position + new Vector2(Random.Shared.Next(10, (int)viewPort.Size.X - 10), 10);
     }
 
-    private Sprite2D LoadSprite(byte[] data)
+    public void SetImage(byte[] buffer)
     {
         var image = new Image();
-        image.LoadPngFromBuffer(data);
+        image.LoadPngFromBuffer(buffer);
         var imageTexture = ImageTexture.CreateFromImage(image);
 
-        var sprite = new Sprite2D();
-        sprite.Texture = imageTexture;
-
-        return sprite;
+        _sprite.Texture = imageTexture;
     }
 
-    public async override void _Ready()
+    public override void _PhysicsProcess(double delta)
+    {
+        var speed = 200;
+        GlobalPosition = new(GlobalPosition.X, GlobalPosition.Y + (float)(speed * delta));
+    }
+}
+
+public class Mod
+{
+    private readonly Plugin _extismPlugin;
+    private readonly mod_manager _manager;
+
+    public Mod(byte[] wasm, mod_manager manager)
     {
         var hostFunctions = new HostFunction[]
         {
@@ -77,17 +138,17 @@ public partial class PowerUpMod : Area2D
                 GD.Print(message);
             }),
 
-			// TODO: Use HostFunction.FromMethod after https://github.com/extism/dotnet-sdk/pull/35 is merged
-			new HostFunction(
+            new HostFunction(
                 "show_sprite",
-                new ExtismValType[] { ExtismValType.I64, ExtismValType.F32, ExtismValType.F32 },
+                new ExtismValType[] { ExtismValType.I32, ExtismValType.I64, ExtismValType.F32, ExtismValType.F32 },
                 new Span<ExtismValType>{ },
                 IntPtr.Zero,
                 (CurrentPlugin cp, Span<ExtismVal> inputs, Span<ExtismVal> outputs) =>
                 {
-                    var offs = inputs[0].v.i64;
-                    var x = inputs[1].v.f32;
-                    var y = inputs[2].v.f32;
+                    var id = inputs[0].v.i32;
+                    var offs = inputs[1].v.i64;
+                    var x = inputs[2].v.f32;
+                    var y = inputs[3].v.f32;
 
                     var name = cp.ReadBytes(offs).ToArray();
 
@@ -98,7 +159,9 @@ public partial class PowerUpMod : Area2D
                         var sprite = LoadSprite(resourceBuffer);
                         sprite.Name = Encoding.UTF8.GetString(name);
                         sprite.GlobalPosition = new Vector2(x, y);
-                        AddChild(sprite);
+
+                        var node = manager.PowerUps.FirstOrDefault(p => p.Id == id);
+                        node.AddChild(sprite);
                     });
                 }),
 
@@ -106,21 +169,25 @@ public partial class PowerUpMod : Area2D
             {
                 var input = cp.ReadBytes(offset).ToArray();
 
-                var timer = GetTree().CreateTimer(seconds);
+                var timer = _manager.GetTree().CreateTimer(seconds);
                 timer.Connect("timeout", Callable.From(() =>
                 {
                     _extismPlugin.Call("reminder", input);
                 }));
             }),
 
-            HostFunction.FromMethod("die", IntPtr.Zero, (CurrentPlugin cp) =>
+            HostFunction.FromMethod("die", IntPtr.Zero, (CurrentPlugin cp, int id) =>
             {
-               QueueFree();
+                var powerup = _manager.PowerUps.FirstOrDefault(p => p.Id == id);
+                if (powerup != null)
+                {
+                    powerup.QueueFree();
+                }
             }),
 
             HostFunction.FromMethod("get_viewport", IntPtr.Zero, (CurrentPlugin cp) =>
             {
-                var viewport = GetViewportRect();
+                var viewport = _manager.GetViewportRect();
                 var rect = new Rect(viewport.Position.X, viewport.Position.Y, viewport.Size.X, viewport.Size.Y);
 
                 var json = JsonSerializer.Serialize(rect);
@@ -130,7 +197,7 @@ public partial class PowerUpMod : Area2D
             HostFunction.FromMethod("get_enemies", IntPtr.Zero, (CurrentPlugin cp) =>
             {
                 var enemies = new List<Enemy>();
-                foreach (var enemy in GetParent().GetParent().FindChild("EnemyContainer").GetChildren().OfType<Area2D>())
+                foreach (var enemy in _manager.GetParent().FindChild("EnemyContainer").GetChildren().OfType<Area2D>())
                 {
                     enemies.Add(new Enemy(
                        enemy.GlobalPosition.X,
@@ -148,7 +215,7 @@ public partial class PowerUpMod : Area2D
             {
                 var enemies = new List<Enemy>();
 
-                foreach (var enemy in GetParent().GetParent().FindChild("EnemyContainer").GetChildren().OfType<Area2D>())
+                foreach (var enemy in _manager.GetParent().FindChild("EnemyContainer").GetChildren().OfType<Area2D>())
                 {
                     var enemyId = enemy.Get("id").AsInt32();
                      enemy.Call("take_damage", amount);
@@ -163,8 +230,7 @@ public partial class PowerUpMod : Area2D
 
             HostFunction.FromMethod("get_player_info", IntPtr.Zero, (CurrentPlugin cp) =>
             {
-                var parent = GetParent().GetParent();
-                var player = (CharacterBody2D)GetParent().GetParent().FindChild("Player");
+                var player = (CharacterBody2D)_manager.GetParent().FindChild("Player");
                 var info = new PlayerInfo(player.GlobalPosition.X, player.GlobalPosition.Y);
 
                 var json = JsonSerializer.Serialize(info);
@@ -177,61 +243,51 @@ public partial class PowerUpMod : Area2D
             hostFunction.SetNamespace("host");
         }
 
-        _extismPlugin = await Task.Run(() => new Plugin(new Manifest(new ByteArrayWasmSource(_wasm, "power up")), hostFunctions, withWasi: true));
+        _extismPlugin = new Plugin(new Manifest(new ByteArrayWasmSource(wasm, "power up")), hostFunctions, withWasi: true);
+        _manager = manager;
+    }
 
-        _extismPlugin.Call("on_ready", Array.Empty<byte>());
+    public void Activate(PowerUp powerUp)
+    {
+        _extismPlugin.Call("activate", powerUp.Info);
+    }
 
-        var spriteName = _extismPlugin.Call("get_sprite", Array.Empty<byte>()).ToArray();
+    internal Texture2D GetSpriteTexture(PowerUp powerUp)
+    {
+        var spriteName = _extismPlugin.Call("get_sprite", powerUp.Info).ToArray();
         var spriteBuffer = _extismPlugin.Call("load_resource", spriteName).ToArray();
-
         var image = new Image();
         image.LoadPngFromBuffer(spriteBuffer);
         var imageTexture = ImageTexture.CreateFromImage(image);
 
-        var sprite = new Sprite2D();
-        sprite.Texture = imageTexture;
-        sprite.Position = new Vector2(10, 10);
-
-        var collision = new CollisionShape2D();
-        collision.Shape = new CircleShape2D
-        {
-            Radius = 10,
-        };
-
-        var notifier = new VisibleOnScreenEnabler2D();
-        notifier.Connect("screen_exited", Callable.From(() =>
-        {
-            RemoveChild(sprite);
-            RemoveChild(collision);
-            RemoveChild(notifier);
-            _extismPlugin.Dispose();
-            QueueFree();
-        }));
-
-        Connect("body_entered", Callable.From((Node body) =>
-        {
-            _extismPlugin.Call("activate", Array.Empty<byte>());
-            RemoveChild(sprite);
-            RemoveChild(collision);
-            RemoveChild(notifier);
-        }));
-
-        AddChild(sprite);
-        AddChild(collision);
-        AddChild(notifier);
-
-        var viewPort = GetViewportRect();
-
-        GlobalPosition = viewPort.Position + new Vector2(Random.Shared.Next(10, (int)viewPort.Size.X - 10), 10);
+        return imageTexture;
     }
 
-    public override void _PhysicsProcess(double delta)
+    private void CallPluginFunction(Action action)
     {
-        var speed = 200;
-        GlobalPosition = new(GlobalPosition.X, GlobalPosition.Y + (float)(speed * delta));
+        // HACK: calling a plugin function within a host function causes a deadlock!
+
+        var timer = _manager.GetTree().CreateTimer(0.0001);
+        timer.Connect("timeout", Callable.From(() =>
+        {
+            action();
+        }));
+    }
+
+    private Sprite2D LoadSprite(byte[] data)
+    {
+        var image = new Image();
+        image.LoadPngFromBuffer(data);
+        var imageTexture = ImageTexture.CreateFromImage(image);
+
+        var sprite = new Sprite2D();
+        sprite.Texture = imageTexture;
+
+        return sprite;
     }
 }
 
+public record PowerUpInfo(int id);
 public record Rect(float x, float y, float width, float height);
 public record Enemy(float x, float y, int id, int hp, int bounty);
 public record PlayerInfo(float x, float y);
