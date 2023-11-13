@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 
 public partial class mod_manager : Node2D
 {
@@ -22,6 +23,23 @@ public partial class mod_manager : Node2D
 
     public override void _Ready()
     {
+        var player = (CharacterBody2D)GetParent().FindChild("Player");
+
+        player.Connect("took_damage", Callable.From((int amount) =>
+        {
+            var payload = new PlayerTakingDamagePayload(amount);
+            foreach (var powerup in PowerUps)
+            {
+                var json = JsonSerializer.Serialize(payload);
+                payload = JsonSerializer.Deserialize<PlayerTakingDamagePayload>(powerup.PlayerTakingDamage(json));
+            }
+
+            if (payload.amount > 0)
+            {
+                player.Call("die");
+            }
+        }));
+
         var timer = new Timer
         {
             Autostart = true,
@@ -64,6 +82,10 @@ public partial class PowerUp : Area2D
         Info = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new PowerUpInfo(Id)));
     }
 
+    public List<Sprite2D> GlobalSprites { get; set; } = new List<Sprite2D>();
+
+    public bool IsActive { get; set; }
+
     public int Id { get; set; }
     public byte[] Info { get; }
 
@@ -96,6 +118,7 @@ public partial class PowerUp : Area2D
             RemoveChild(collision);
             RemoveChild(notifier);
             _mod.Activate(this);
+            IsActive = true;
         }));
 
         AddChild(_sprite);
@@ -120,6 +143,13 @@ public partial class PowerUp : Area2D
     {
         var speed = 200;
         GlobalPosition = new(GlobalPosition.X, GlobalPosition.Y + (float)(speed * delta));
+    }
+
+    internal string PlayerTakingDamage(string json)
+    {
+        if (!IsActive) return json;
+
+        return _mod.PlayerTakingDamage(json);
     }
 }
 
@@ -165,6 +195,34 @@ public class Mod
                     });
                 }),
 
+             new HostFunction(
+                "show_global_sprite",
+                new ExtismValType[] { ExtismValType.I32, ExtismValType.I64, ExtismValType.F32, ExtismValType.F32 },
+                new Span<ExtismValType>{ },
+                IntPtr.Zero,
+                (CurrentPlugin cp, Span<ExtismVal> inputs, Span<ExtismVal> outputs) =>
+                {
+                    var id = inputs[0].v.i32;
+                    var offs = inputs[1].v.i64;
+                    var x = inputs[2].v.f32;
+                    var y = inputs[3].v.f32;
+
+                    var name = cp.ReadBytes(offs).ToArray();
+
+                    CallPluginFunction(() =>
+                    {
+                        var resourceBuffer = _extismPlugin.Call("load_resource", name).ToArray();
+
+                        var sprite = LoadSprite(resourceBuffer);
+                        sprite.Name = Encoding.UTF8.GetString(name);
+                        sprite.GlobalPosition = new Vector2(x, y);
+
+                        var node = manager.PowerUps.FirstOrDefault(p => p.Id == id);
+                        node.GlobalSprites.Add(sprite);
+                        manager.AddChild(sprite);
+                    });
+                }),
+
             HostFunction.FromMethod("create_reminder", IntPtr.Zero, (CurrentPlugin cp, float seconds, long offset) =>
             {
                 var input = cp.ReadBytes(offset).ToArray();
@@ -181,6 +239,11 @@ public class Mod
                 var powerup = _manager.PowerUps.FirstOrDefault(p => p.Id == id);
                 if (powerup != null)
                 {
+                    foreach (var sprite in powerup.GlobalSprites)
+                    {
+                        sprite.QueueFree();
+                    }
+
                     powerup.QueueFree();
                 }
             }),
@@ -236,6 +299,31 @@ public class Mod
                 var json = JsonSerializer.Serialize(info);
                 return cp.WriteString(json);
             }),
+
+            HostFunction.FromMethod("player_clear_muzzles", IntPtr.Zero, (CurrentPlugin cp) =>
+            {
+                var player = (CharacterBody2D)_manager.GetParent().FindChild("Player");
+                player.Call("clear_muzzles");
+            }),
+
+            HostFunction.FromMethod("player_add_muzzle", IntPtr.Zero, (CurrentPlugin cp, float x, float y) =>
+            {
+                var player = (CharacterBody2D)_manager.GetParent().FindChild("Player");
+                player.Call("add_muzzle", x, y);
+            }),
+
+             HostFunction.FromMethod("player_change_sprite", IntPtr.Zero, (CurrentPlugin cp, long offs) =>
+            {
+                var player = (CharacterBody2D)_manager.GetParent().FindChild("Player");
+                var name = cp.ReadString(offs);
+
+                CallPluginFunction(() =>
+                {
+                    var resourceBuffer = _extismPlugin.Call("load_resource", Encoding.UTF8.GetBytes(name)).ToArray();
+                    var texture = LoadTexture(resourceBuffer);
+                    player.Call("change_sprite", texture);
+                });
+            }),
         };
 
         foreach (var hostFunction in hostFunctions)
@@ -263,6 +351,12 @@ public class Mod
         return imageTexture;
     }
 
+    internal string PlayerTakingDamage(string json)
+    {
+        var bytes = _extismPlugin.Call("player_taking_damage", Encoding.UTF8.GetBytes(json));
+        return Encoding.UTF8.GetString(bytes);
+    }
+
     private void CallPluginFunction(Action action)
     {
         // HACK: calling a plugin function within a host function causes a deadlock!
@@ -276,17 +370,24 @@ public class Mod
 
     private Sprite2D LoadSprite(byte[] data)
     {
-        var image = new Image();
-        image.LoadPngFromBuffer(data);
-        var imageTexture = ImageTexture.CreateFromImage(image);
+        ImageTexture imageTexture = LoadTexture(data);
 
         var sprite = new Sprite2D();
         sprite.Texture = imageTexture;
 
         return sprite;
     }
+
+    private static ImageTexture LoadTexture(byte[] data)
+    {
+        var image = new Image();
+        image.LoadPngFromBuffer(data);
+        var imageTexture = ImageTexture.CreateFromImage(image);
+        return imageTexture;
+    }
 }
 
+public record PlayerTakingDamagePayload(int amount);
 public record PowerUpInfo(int id);
 public record Rect(float x, float y, float width, float height);
 public record Enemy(float x, float y, int id, int hp, int bounty);

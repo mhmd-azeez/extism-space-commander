@@ -1,14 +1,30 @@
 class_name Player extends CharacterBody2D
 
 signal laser_shot(laser_scene, location)
+signal took_damage(amount)
 
+@export var muzzles: Array[Marker2D] = []
 @export var speed = 300
 @export var shots_per_second := 4.0
 
-@onready var muzzle = $Muzzle
 var laser_scene = preload("res://scenes/laser.tscn")
 
 var shoot_cooldown := false
+
+func add_muzzle(x, y):
+	var m = Marker2D.new()
+	m.global_position = Vector2(x, y)
+	add_child(m)
+	muzzles.append(m)
+
+func clear_muzzles():
+	muzzles.clear()
+
+func change_sprite(t):
+	$Sprite2D.texture = t
+
+func _ready():
+	muzzles.append($Muzzle)
 
 func _process(delta):
 	if Input.is_action_pressed("shoot"):
@@ -28,7 +44,11 @@ func _physics_process(delta):
 	global_position = global_position.clamp(Vector2(50, 50), get_viewport_rect().size - Vector2(50, 50))
 	
 func shoot():
-	laser_shot.emit(laser_scene, muzzle.global_position)
+	for m in muzzles:
+		laser_shot.emit(laser_scene, m.global_position)
+
+func take_damage():
+	took_damage.emit(1)
 
 func die():
 	get_tree().reload_current_scene()
