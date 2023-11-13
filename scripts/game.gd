@@ -26,9 +26,6 @@ func _ready():
 	var mod_manager_script = load("res://scripts/mod_manager.cs")
 	mod_manager = mod_manager_script.new()
 	self.add_child(mod_manager)
-	
-#	player = get_tree().get_first_node_in_group("player")
-#	assert(player != null)
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):

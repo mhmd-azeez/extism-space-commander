@@ -9,27 +9,65 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 public partial class mod_manager : Node
 {
-    private readonly List<PowerUpMod> _powerUpMods = new();
-
     public override void _Ready()
     {
-        foreach (var file in Directory.EnumerateFiles("assets/mods/", "*.wasm"))
+        var timer = new Godot.Timer
         {
-            var mod = new PowerUpMod(file);
-            _powerUpMods.Add(mod);
+            Autostart = true,
+            OneShot = false,
+            WaitTime = 10
+        };
+
+        AddChild(timer);
+        var mods = Directory.EnumerateFiles("assets/mods/", "*.wasm").Select(f => File.ReadAllBytes(f)).ToArray();
+        timer.Connect("timeout", Callable.From(() =>
+        {
+            var idx = Random.Shared.Next(mods.Length);
+            var mod = new PowerUpMod(mods[idx]);
             AddChild(mod);
-        }
+        }));
     }
 }
 
 public partial class PowerUpMod : Area2D
 {
-    private readonly Plugin _extismPlugin;
+    private Plugin _extismPlugin;
+    private readonly byte[] _wasm;
 
-    public PowerUpMod(string wasmPath)
+    public PowerUpMod(byte[] wasm)
+    {
+        _wasm = wasm;
+    }
+
+    private void CallPluginFunction(Action action)
+    {
+        // HACK: calling a plugin function within a host function causes a deadlock!
+
+        var timer = GetTree().CreateTimer(0.0001);
+        timer.Connect("timeout", Callable.From(() =>
+        {
+            action();
+        }));
+    }
+
+    private Sprite2D LoadSprite(byte[] data)
+    {
+        var image = new Image();
+        image.LoadPngFromBuffer(data);
+        var imageTexture = ImageTexture.CreateFromImage(image);
+
+        var sprite = new Sprite2D();
+        sprite.Texture = imageTexture;
+
+        return sprite;
+    }
+
+    public async override void _Ready()
     {
         var hostFunctions = new HostFunction[]
         {
@@ -139,34 +177,8 @@ public partial class PowerUpMod : Area2D
             hostFunction.SetNamespace("host");
         }
 
-        _extismPlugin = new Plugin(new Manifest(new PathWasmSource(wasmPath)), hostFunctions, withWasi: true);
-    }
+        _extismPlugin = await Task.Run(() => new Plugin(new Manifest(new ByteArrayWasmSource(_wasm, "power up")), hostFunctions, withWasi: true));
 
-    private void CallPluginFunction(Action action)
-    {
-        // HACK: calling a plugin function within a host function causes a deadlock!
-
-        var timer = GetTree().CreateTimer(0.0001);
-        timer.Connect("timeout", Callable.From(() =>
-        {
-            action();
-        }));
-    }
-
-    private Sprite2D LoadSprite(byte[] data)
-    {
-        var image = new Image();
-        image.LoadPngFromBuffer(data);
-        var imageTexture = ImageTexture.CreateFromImage(image);
-
-        var sprite = new Sprite2D();
-        sprite.Texture = imageTexture;
-
-        return sprite;
-    }
-
-    public override void _Ready()
-    {
         _extismPlugin.Call("on_ready", Array.Empty<byte>());
 
         var spriteName = _extismPlugin.Call("get_sprite", Array.Empty<byte>()).ToArray();
