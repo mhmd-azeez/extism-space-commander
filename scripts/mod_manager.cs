@@ -245,6 +245,7 @@ public class Mod
                     }
 
                     powerup.QueueFree();
+                    _manager.PowerUps.Remove(powerup);
                 }
             }),
 
