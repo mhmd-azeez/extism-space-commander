@@ -6,6 +6,9 @@ The project is built in Godot 4 and uses both GDScript (for the game logic) and 
 
 https://github.com/mhmd-azeez/extism-space-commander/assets/16880059/1d85b399-7a34-430f-ba6d-464c8f954e4c
 
+You can see the full demo with some explaination here:
+https://www.loom.com/share/4a0bd61c002641fcacc0ee3ce394db5c?sid=ef2de775-0b08-4fc1-8c93-f23bcf6e0b48
+
 ## Structure
 
 - [scripts](./scripts): contains the game logic
