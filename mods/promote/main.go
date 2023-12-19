@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
 	"fmt"
 
 	mod "modding_api"
@@ -94,19 +93,7 @@ type PlayerTakingDamagePayload struct {
 
 //export player_taking_damage
 func player_taking_damage() {
-	var payload PlayerTakingDamagePayload
-
 	payloadJson := pdk.Input()
-
-	err := json.Unmarshal(payloadJson, &payload)
-
-	payload.Amount = 0
-
-	payloadJson, err = json.Marshal(payload)
-	if err != nil {
-		print(fmt.Sprintf("Failed to serialize response, %v", err))
-		return
-	}
 
 	pdk.Output(payloadJson)
 }
